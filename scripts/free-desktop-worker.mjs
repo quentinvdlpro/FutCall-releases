@@ -68,6 +68,22 @@ try {
     const nsis=path.join(bundle,'nsis',`FutCall_${input.version}_x64-setup.exe`);
     const report=path.join(outputs,'windows-smoke.json');
     await run('Windows installed package', 'pwsh',['-NoProfile','-File','scripts/desktop/windows-smoke.ps1','-InstallerPath',nsis,'-OutputPath',report]);
+    const installed=JSON.parse(await readFile(report,'utf8'));
+    if(installed.passed!==true || installed.uninstalled!==true || installed.sidecarStopped!==true) throw new Error('Fresh Windows fixture did not complete safely.');
+    await run('cleanup Windows smoke fixture','pwsh',['-NoProfile','-Command',`
+      $ErrorActionPreference = 'Stop'
+      if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Disposable Windows runner required.' }
+      $fixturePaths = @((Join-Path $env:LOCALAPPDATA 'app.futcall.desktop'), (Join-Path $env:APPDATA 'app.futcall.desktop'))
+      $deadline = [DateTime]::UtcNow.AddSeconds(45)
+      do {
+        foreach ($fixturePath in $fixturePaths) {
+          if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        if (!@($fixturePaths | Where-Object { Test-Path -LiteralPath $_ }).Count) { break }
+        Start-Sleep -Milliseconds 500
+      } while ([DateTime]::UtcNow -lt $deadline)
+      if (@($fixturePaths | Where-Object { Test-Path -LiteralPath $_ }).Count) { throw 'Windows fixture cleanup was still locked.' }
+    `]);
     const previous=path.join(workspace,'previous');
     await mkdir(previous);
     for(const name of ['FutCaller_0.1.2_x64-setup.exe','FutCaller_0.1.2_x64-setup.exe.sig']) await download(`https://github.com/quentinvdlpro/FutCall-releases/releases/download/v0.1.2/${name}`,path.join(previous,name));
