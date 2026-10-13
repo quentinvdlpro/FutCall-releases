@@ -1,0 +1,17 @@
+name: Free desktop runner availability
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  availability:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - name: Confirm standard runner availability
+        shell: bash
+        run: node -e 'console.log("Standard runner available:", process.platform, process.arch)'
