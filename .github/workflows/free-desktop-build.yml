@@ -1,0 +1,50 @@
+name: Free desktop build
+on:
+  workflow_dispatch:
+    inputs:
+      build_input:
+        description: Reviewed encrypted source manifest
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: free-desktop-build
+  cancel-in-progress: false
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
+      NEXT_PUBLIC_DISCORD_INVITE_URL: ${{ vars.NEXT_PUBLIC_DISCORD_INVITE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+          targets: ${{ matrix.target }}
+      - name: Build reviewed desktop package
+        env:
+          FUTCALL_SOURCE_KEY: ${{ secrets.FUTCALL_SOURCE_KEY }}
+          FUTCALL_BUILD_INPUT: ${{ inputs.build_input }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/free-desktop-worker.mjs
