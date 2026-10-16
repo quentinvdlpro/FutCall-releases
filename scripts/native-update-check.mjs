@@ -35,15 +35,17 @@ const port=19226;let child,connection;
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function retry(operation,timeout=90000){const until=Date.now()+timeout;let last;while(Date.now()<until){try{const value=await operation();if(value)return value}catch(e){last=e}await wait(500)}throw Error('Verification timed out: '+(last?.message??'condition not satisfied'))}
 async function connect(){const targets=await(await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(2000)})).json();const target=targets.find(t=>t.type==='page'&&/^http:\/\/127\.0\.0\.1:\d+\//.test(t.url));if(!target)return null;const ws=new WebSocket(target.webSocketDebuggerUrl);await new Promise((res,rej)=>{ws.addEventListener('open',res,{once:true});ws.addEventListener('error',rej,{once:true})});let id=0;const pending=new Map();ws.addEventListener('message',event=>{const m=JSON.parse(String(event.data));const callback=pending.get(m.id);if(callback){pending.delete(m.id);m.error?callback.reject(Error('CDP request failed')):callback.resolve(m.result)}});ws.addEventListener('close',()=>{for(const p of pending.values())p.reject(Error('WebView restarted'));pending.clear()});return{url:target.url,close:()=>ws.close(),async evaluate(expression,awaitPromise=true){const response=await new Promise((resolve,reject)=>{const requestId=++id;const timer=setTimeout(()=>{pending.delete(requestId);reject(Error('CDP timeout'))},30000);pending.set(requestId,{resolve:v=>{clearTimeout(timer);resolve(v)},reject:e=>{clearTimeout(timer);reject(e)}});ws.send(JSON.stringify({id:requestId,method:'Runtime.evaluate',params:{expression,awaitPromise,returnByValue:true}}))});if(response.exceptionDetails)throw Error('Application evaluation failed');return response.result.value}}}
+// This disposable-runner policy also applies to the process relaunched by NSIS.
+ps("$key='HKCU:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments'; New-Item -Path $key -Force | Out-Null; New-ItemProperty -Path $key -Name 'futcall-desktop.exe' -PropertyType String -Value '--remote-debugging-port=19226 --remote-debugging-address=127.0.0.1' -Force | Out-Null");
 try{
  child=spawn(exe,[],{env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`},stdio:'ignore',shell:false});
  connection=await retry(connect);await retry(()=>connection.evaluate("Boolean(window.__TAURI_INTERNALS__ && document.querySelector('h1'))"));
- const detected=await connection.evaluate("window.__TAURI_INTERNALS__.invoke('desktop_check_update')");if(!detected.configured||detected.version!==version)throw Error('Real updater did not discover requested release');
+ const detected=await connection.evaluate("window.__TAURI_INTERNALS__.invoke('desktop_check_update')");if(!detected.configured||detected.version!==version)throw Error('Real updater did not discover requested release');console.log('Real native updater detected '+detected.version);
  await retry(()=>connection.evaluate("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Update and restart'&&!b.disabled)"));
  const originalUrl=connection.url,originalPid=child.pid;
  const oldSidecars=JSON.parse(ps("ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process -Filter \"Name='futcall-node.exe'\" | Select-Object ProcessId) -Compress")).map(p=>p.ProcessId);
  if(!await connection.evaluate("(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Update and restart'&&!b.disabled);if(!b)return false;b.click();return true})()"))throw Error('Update button not usable');
- await retry(async()=>{const c=JSON.parse(await readFile(path.join(install,'public-config.json')));return c.version===version},240000);
+ await retry(async()=>{const c=JSON.parse(await readFile(path.join(install,'public-config.json')));return c.version===version},240000);console.log('Native updater installed configuration '+version);
  connection.close();connection=await retry(async()=>{const candidate=await connect();if(!candidate)return null;if(candidate.url===originalUrl){candidate.close();return null}return candidate},120000);
  await retry(()=>connection.evaluate("Boolean(window.__TAURI_INTERNALS__ && document.querySelector('h1'))"));
  const current=await connection.evaluate("window.__TAURI_INTERNALS__.invoke('desktop_check_update')");if(!current.configured||current.version!==null)throw Error('Updated application does not report current version');
@@ -55,7 +57,13 @@ try{
  const published=await fetch(manifest.platforms['windows-x86_64-nsis'].url,{signal:AbortSignal.timeout(180000)});if(!published.ok||createHash('sha256').update(Buffer.from(await published.arrayBuffer())).digest('hex')!==expectedHash)throw Error('Updater source differs from reviewed public installer');
  const report={passed:true,previousVersion,version,realNativeUpdater:true,detectedAutomatically:true,updateButtonClicked:true,downloadAndSignatureVerification:true,restarted:true,oldSidecarStopped:true,latestVersionConfirmed:true,themePreserved:true,dataMarkerPreserved:true,sameInstallation:true,publicInstallerSha256:expectedHash,runId:process.env.GITHUB_RUN_ID,checkedAt:new Date().toISOString()};
  console.log('FUTCALL_NATIVE_UPDATE_VERIFIED '+JSON.stringify(report));
+}catch(error){
+ const config=await readFile(path.join(install,'public-config.json'),'utf8').then(JSON.parse).catch(()=>null);
+ const processes=JSON.parse(ps("ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process | Where-Object {$_.Name -in @('futcall-desktop.exe','futcall-node.exe')} | Select-Object Name,ProcessId,ParentProcessId) -Compress"));
+ console.log('FUTCALL_NATIVE_UPDATE_DIAGNOSTIC '+JSON.stringify({installedVersion:config?.version,originalPid:child?.pid,originalExitCode:child?.exitCode,processes}));
+ throw error;
 }finally{
  connection?.close();
+ ps("Remove-ItemProperty -Path 'HKCU:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments' -Name 'futcall-desktop.exe' -ErrorAction SilentlyContinue");
  ps("Get-CimInstance Win32_Process | Where-Object {$_.Name -in @('futcall-desktop.exe','futcall-node.exe')} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }");
 }
