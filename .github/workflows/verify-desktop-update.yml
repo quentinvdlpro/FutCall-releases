@@ -1,0 +1,36 @@
+name: Verify published desktop update
+on:
+  workflow_dispatch:
+    inputs:
+      installer_sha256:
+        description: SHA256 of the reviewed published FutCall 0.1.6 NSIS installer
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  native-update:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Install trusted Microsoft WebView2 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftWebView2Setup.exe'
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer -TimeoutSec 120
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or !$signature.SignerCertificate -or $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') { throw 'Untrusted Microsoft bootstrapper' }
+          $process = Start-Process -FilePath $installer -ArgumentList @('/silent', '/install') -PassThru
+          if (!$process.WaitForExit(180000)) { throw 'WebView2 installation timed out' }
+          if ($process.ExitCode -notin @(0, -2147219198)) { throw 'WebView2 installation failed' }
+      - name: Update installed 0.1.5 through its real native updater
+        env:
+          FUTCALL_EXPECTED_INSTALLER_SHA256: ${{ inputs.installer_sha256 }}
+        run: node scripts/native-update-check.mjs
