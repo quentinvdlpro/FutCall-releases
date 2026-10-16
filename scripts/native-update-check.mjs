@@ -14,6 +14,15 @@ for(const dir of [appData,path.join(process.env.APPDATA,'app.futcall.desktop')])
 function ps(script){const r=spawnSync('pwsh',['-NoProfile','-Command',"$ErrorActionPreference='Stop'; "+script],{encoding:'utf8',shell:false});if(r.status!==0)throw Error('Windows process verification failed');return r.stdout.trim()}
 if(JSON.parse(ps("ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process -Filter \"Name='futcall-desktop.exe'\" | Select-Object ProcessId) -Compress")).length)throw Error('Existing FutCall process');
 await mkdir(base,{recursive:true});
+console.log('Waiting for the reviewed 0.1.6 public update channel');
+let channelReady=false;
+const publicationDeadline=Date.now()+20*60*1000;
+while(Date.now()<publicationDeadline){
+ try{const response=await fetch('https://github.com/quentinvdlpro/FutCall-releases/releases/latest/download/latest.json',{signal:AbortSignal.timeout(15000)});if(response.ok&&(await response.json()).version===version){channelReady=true;break}}catch{}
+ await new Promise(resolve=>setTimeout(resolve,15000));
+}
+if(!channelReady)throw Error('The reviewed version was not published before the verification deadline');
+console.log('Reviewed public channel is available; starting real installed-app upgrade');
 const installer=path.join(base,'previous-setup.exe');
 const response=await fetch(`https://github.com/quentinvdlpro/FutCall-releases/releases/download/v${previousVersion}/FutCall_${previousVersion}_x64-setup.exe`,{signal:AbortSignal.timeout(180000)});
 if(!response.ok)throw Error('Previous public installer unavailable');
