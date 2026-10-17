@@ -4,7 +4,7 @@ import {readFile,writeFile,mkdir,access} from 'node:fs/promises';
 import {createHash,randomBytes} from 'node:crypto';
 import path from 'node:path';
 if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||process.env.RUNNER_ENVIRONMENT!=='github-hosted')throw Error('Disposable hosted Windows runner required');
-const version='0.1.7',previousVersion='0.1.6',previousHash='5551d98d0ed2f0d621b74477c933dd6639e4b180781f19d5347b8629a7849be7';
+const version='0.1.8',previousVersion='0.1.7',previousHash='a755af6f1fea80e2a529dd3ee2957dadf8d220178da7fda395407bcb55c09be1';
 const expectedHash=process.env.FUTCALL_EXPECTED_INSTALLER_SHA256;
 if(!/^[a-f0-9]{64}$/.test(expectedHash??''))throw Error('Expected reviewed installer checksum is required');
 const base=path.join(process.env.RUNNER_TEMP,'FutCall-native-update-'+randomBytes(5).toString('hex'));
@@ -14,7 +14,7 @@ for(const dir of [appData,path.join(process.env.APPDATA,'app.futcall.desktop')])
 function ps(script){const r=spawnSync('pwsh',['-NoProfile','-Command',"$ErrorActionPreference='Stop'; "+script],{encoding:'utf8',shell:false});if(r.status!==0)throw Error('Windows process verification failed');return r.stdout.trim()}
 if(JSON.parse(ps("ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process -Filter \"Name='futcall-desktop.exe'\" | Select-Object ProcessId) -Compress")).length)throw Error('Existing FutCall process');
 await mkdir(base,{recursive:true});
-console.log('Waiting for the reviewed 0.1.7 public update channel');
+console.log('Waiting for the reviewed 0.1.8 public update channel');
 let channelReady=false;
 const publicationDeadline=Date.now()+20*60*1000;
 while(Date.now()<publicationDeadline){
