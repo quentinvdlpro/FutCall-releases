@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       installer_sha256:
-        description: SHA256 of the reviewed published FutCall 0.1.13 NSIS installer
+        description: SHA256 of the reviewed published FutCall 0.1.14 NSIS installer
         type: string
         required: true
 permissions:
@@ -35,7 +35,7 @@ jobs:
           $process = Start-Process -FilePath $installer -ArgumentList @('/silent', '/install') -PassThru
           if (!$process.WaitForExit(180000)) { throw 'WebView2 installation timed out' }
           if ($process.ExitCode -ne 0) { throw 'WebView2 installation failed' }
-      - name: Update installed 0.1.12 through its real native updater
+      - name: Update installed 0.1.13 through its real native updater
         env:
           FUTCALL_EXPECTED_INSTALLER_SHA256: ${{ inputs.installer_sha256 }}
         run: node scripts/native-update-check.mjs
