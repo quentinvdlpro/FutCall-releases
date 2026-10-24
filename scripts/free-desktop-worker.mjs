@@ -4,12 +4,12 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const input = JSON.parse(process.env.FUTCALL_BUILD_INPUT);
-if (!/^[a-f0-9]{40}$/.test(input.sourceSha) || !/^[a-f0-9]{64}$/.test(input.archiveSha256) || input.version !== '0.1.14') throw new Error('Invalid reviewed build input.');
+if (!/^[a-f0-9]{40}$/.test(input.sourceSha) || !/^[a-f0-9]{64}$/.test(input.archiveSha256) || input.version !== '0.1.15') throw new Error('Invalid reviewed build input.');
 const key = Buffer.from(process.env.FUTCALL_SOURCE_KEY ?? '', 'base64');
 const githubToken = process.env.GH_TOKEN;
 delete process.env.FUTCALL_SOURCE_KEY;
 delete process.env.GH_TOKEN;
-if (!/^candidate-v0\.1\.14-[a-f0-9]+$/.test(input.candidateTag)) throw new Error('Invalid candidate tag.');
+if (!/^candidate-v0\.1\.15-[a-f0-9]+$/.test(input.candidateTag)) throw new Error('Invalid candidate tag.');
 if (key.length !== 32 || !githubToken) throw new Error('Missing scoped build input configuration.');
 const targets = {'darwin:arm64':'aarch64-apple-darwin','darwin:x64':'x86_64-apple-darwin','win32:x64':'x86_64-pc-windows-msvc'};
 const target = targets[`${process.platform}:${process.arch}`];
