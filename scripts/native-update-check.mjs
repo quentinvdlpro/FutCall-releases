@@ -14,14 +14,21 @@ for(const dir of [appData,path.join(process.env.APPDATA,'app.futcall.desktop')])
 function ps(script){const r=spawnSync('pwsh',['-NoProfile','-Command',"$ErrorActionPreference='Stop'; "+script],{encoding:'utf8',shell:false});if(r.status!==0)throw Error('Windows process verification failed');return r.stdout.trim()}
 if(JSON.parse(ps("ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process -Filter \"Name='futcall-desktop.exe'\" | Select-Object ProcessId) -Compress")).length)throw Error('Existing FutCall process');
 await mkdir(base,{recursive:true});
-console.log('Waiting for the reviewed 0.1.17 public update channel');
-let channelReady=false;
-const publicationDeadline=Date.now()+20*60*1000;
-while(Date.now()<publicationDeadline){
- try{const response=await fetch('https://github.com/quentinvdlpro/FutCall-releases/releases/latest/download/latest.json',{signal:AbortSignal.timeout(15000)});if(response.ok&&(await response.json()).version===version){channelReady=true;break}}catch{}
- await new Promise(resolve=>setTimeout(resolve,15000));
+async function publishedChannel(timeout){
+ const deadline=Date.now()+timeout;let observed='unavailable';
+ while(Date.now()<deadline){
+  try{
+   const url=new URL('https://github.com/quentinvdlpro/FutCall-releases/releases/latest/download/latest.json');
+   url.searchParams.set('verification',process.env.GITHUB_RUN_ID+'-'+Date.now());
+   const response=await fetch(url,{cache:'no-store',headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(15000)});
+   if(response.ok){const manifest=await response.json();observed=manifest.version;if(manifest.version===version)return manifest;}
+  }catch{}
+  await new Promise(resolve=>setTimeout(resolve,15000));
+ }
+ throw Error('Reviewed public channel did not propagate; last observed version: '+observed);
 }
-if(!channelReady)throw Error('The reviewed version was not published before the verification deadline');
+console.log('Waiting for the reviewed 0.1.17 public update channel');
+await publishedChannel(20*60*1000);
 console.log('Reviewed public channel is available; starting real installed-app upgrade');
 const installer=path.join(base,'previous-setup.exe');
 const response=await fetch(`https://github.com/quentinvdlpro/FutCall-releases/releases/download/v${previousVersion}/FutCall_${previousVersion}_x64-setup.exe`,{signal:AbortSignal.timeout(180000)});
@@ -53,7 +60,7 @@ try{
  const apps=processes.filter(p=>p.Name==='futcall-desktop.exe');if(apps.length!==1||apps[0].ProcessId===originalPid||apps[0].ExecutablePath.toLowerCase()!==exe.toLowerCase())throw Error('Application did not restart in the original installation');
  if(processes.some(p=>oldSidecars.includes(p.ProcessId)))throw Error('Previous sidecar was not stopped');
  if((await readFile(theme,'utf8')).trim()!=='"light"'||JSON.parse(await readFile(markerPath)).marker!==marker)throw Error('Application data did not survive update');
- const manifest=await(await fetch('https://github.com/quentinvdlpro/FutCall-releases/releases/latest/download/latest.json')).json();if(manifest.version!==version)throw Error('Public channel changed during verification');
+ const manifest=await publishedChannel(120000);
  const published=await fetch(manifest.platforms['windows-x86_64-nsis'].url,{signal:AbortSignal.timeout(180000)});if(!published.ok||createHash('sha256').update(Buffer.from(await published.arrayBuffer())).digest('hex')!==expectedHash)throw Error('Updater source differs from reviewed public installer');
  const report={passed:true,previousVersion,version,realNativeUpdater:true,detectedAutomatically:true,updateButtonClicked:true,downloadAndSignatureVerification:true,restarted:true,oldSidecarStopped:true,latestVersionConfirmed:true,themePreserved:true,dataMarkerPreserved:true,sameInstallation:true,publicInstallerSha256:expectedHash,runId:process.env.GITHUB_RUN_ID,checkedAt:new Date().toISOString()};
  console.log('FUTCALL_NATIVE_UPDATE_VERIFIED '+JSON.stringify(report));
